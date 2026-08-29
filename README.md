@@ -90,16 +90,20 @@ Before running the project, verify that the base environment meets the requireme
 ```powershell
 python scripts/verify_environment.py
 ```
-This script will report whether essential tools (Python, pip, Git, PyTorch, OpenCV, pytest) are installed correctly, and print informational messages about external binaries like COLMAP, FFmpeg, and CMake.
+This script will report whether essential tools (Python, pip, Git, PyTorch, OpenCV, pytest) are installed and ready, and print informational status messages about external binaries like COLMAP, FFmpeg, and CMake.
 
-* Verification Script: [verify_environment.py](file:///c:/Users/ATHARAV/Documents/SIH2026/SIH26158-single-pass-3D/scripts/verify_environment.py)
-* Environment Inventory: [environment_inventory.md](file:///c:/Users/ATHARAV/Documents/SIH2026/SIH26158-single-pass-3D/docs/environment_inventory.md)
-* Environment Status details: [environment_status.md](file:///c:/Users/ATHARAV/Documents/SIH2026/SIH26158-single-pass-3D/docs/environment_status.md)
+* Verification Script: [verify_environment.py](file:///d:/SIH26158-single-pass-3D/scripts/verify_environment.py)
+* Environment Inventory: [environment_inventory.md](file:///d:/SIH26158-single-pass-3D/docs/environment_inventory.md)
+* Environment Status details: [environment_status.md](file:///d:/SIH26158-single-pass-3D/docs/environment_status.md)
 
-### 3. Install in Editable Mode
-You can install this package locally to make importing the source modules simpler:
+### 3. Install the Package
+You can install this package locally in editable mode with development and testing dependencies:
 ```powershell
+# For basic usage
 pip install -e .
+
+# For testing and development
+pip install -e .[test]
 ```
 
 ---
@@ -109,7 +113,7 @@ pip install -e .
 To run the structural tests verifying correct file layouts and import paths, run `pytest`:
 
 ```powershell
-python -m pytest tests/
+pytest
 ```
 
-* Structural Tests File: [test_project_structure.py](file:///c:/Users/ATHARAV/Documents/SIH2026/SIH26158-single-pass-3D/tests/test_project_structure.py)
+* Structural Tests File: [test_project_structure.py](file:///d:/SIH26158-single-pass-3D/tests/test_project_structure.py)
