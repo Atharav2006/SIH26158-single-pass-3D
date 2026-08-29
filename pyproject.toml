@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sih26158-single-pass-3d"
+version = "0.1.0"
+description = "Single-Pass Drone Video to Accurate 3D Model Generation System"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "SIH 2026 Team" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "opencv-python",
+    "torch"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

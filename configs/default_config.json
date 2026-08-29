@@ -1,0 +1,31 @@
+{
+  "project_name": "SIH26158-single-pass-3D",
+  "version": "0.1.0",
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "log_to_file": true,
+    "log_file_path": "outputs/reports/pipeline.log"
+  },
+  "ingestion": {
+    "allowed_formats": [".mp4", ".avi", ".mov", ".mkv"]
+  },
+  "frame_selection": {
+    "method": "laplacian_variance",
+    "sharpness_threshold": 100.0,
+    "keyframe_interval": 10
+  },
+  "pose": {
+    "sfm_method": "colmap",
+    "max_num_features": 8192
+  },
+  "depth": {
+    "depth_estimator": "none",
+    "min_depth": 0.1,
+    "max_depth": 100.0
+  },
+  "reconstruction": {
+    "voxel_size": 0.05,
+    "max_correspondence_distance": 0.07
+  }
+}
