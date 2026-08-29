@@ -9,12 +9,12 @@ This document classifies the status of each dependency required for the developm
 | **Python** | `READY` | 3.10.0 | Version 3.10 is fully compatible with modern 3D reconstruction and deep learning frameworks (PyTorch, Open3D, etc.). |
 | **pip** | `READY` | 25.3 | Package installer is present and up to date. |
 | **Git** | `READY` | 2.45.1.windows.1 | Version control is present and initialized. |
-| **FFmpeg** | `MISSING` | N/A | FFmpeg is required for processing input drone video streams into individual frames. Needs to be installed and added to the PATH. |
-| **CMake** | `MISSING` | N/A | CMake is required if we need to build libraries (e.g. COLMAP or custom CUDA/C++ extensions) from source. |
-| **COLMAP** | `MISSING` | N/A | COLMAP is the primary structure-from-motion (SfM) tool to estimate camera poses and initial point clouds. Must be installed (with CUDA support enabled). |
+| **FFmpeg** | `NOT INSTALLED` | N/A | FFmpeg is required for processing input drone video streams into individual frames. Needs to be installed and added to the PATH. |
+| **CMake** | `NOT INSTALLED` | N/A | CMake is required if we need to build libraries (e.g. COLMAP or custom CUDA/C++ extensions) from source. |
+| **COLMAP** | `NOT INSTALLED` | N/A | COLMAP is the primary structure-from-motion (SfM) tool to estimate camera poses and initial point clouds. Must be installed (with CUDA support enabled). |
 | **OpenCV** | `READY` | 4.10.0 | Computer vision library is installed and available in the global Python environment. |
-| **PyTorch** | `INCOMPATIBLE` | 2.10.0+cpu | Although installed, it is a **CPU-only** build. The system has an NVIDIA RTX 3050 GPU, which is highly recommended for 3D generation/deep learning tasks. PyTorch should be reinstalled with CUDA support (e.g., matching the CUDA version). |
-| **Open3D** | `MISSING` | N/A | Open3D is required for 3D point cloud processing, visualization, and meshing. Needs to be installed via `pip`. |
+| **PyTorch** | `BLOCKED` | 2.10.0+cpu | Although installed, it is a **CPU-only** build. The system has an NVIDIA RTX 3050 GPU, which is highly recommended for 3D generation/deep learning tasks. PyTorch must be reinstalled with CUDA support to unlock execution. |
+| **Open3D** | `NOT INSTALLED` | N/A | Open3D is required for 3D point cloud processing, visualization, and meshing. Needs to be installed via `pip`. |
 
 ---
 
