@@ -1,0 +1,61 @@
+{
+    "dataset_name": "Zurich Urban MAV Dataset (AGZ)",
+    "status": "PASS",
+    "checks": {
+        "images": {
+            "total_images": 350,
+            "readable_images": 350,
+            "missing_files": 0,
+            "corrupted_files": 0,
+            "duplicate_timestamps": 0,
+            "duplicate_imgids": 0,
+            "non_integer_imgids": 0,
+            "filename_id_mismatches": 0,
+            "monotonic": true
+        },
+        "gps": {
+            "total_records": 81169,
+            "valid_coordinates": 81169,
+            "invalid_coordinates": 0,
+            "monotonic": false
+        },
+        "imu": {
+            "total_records": 27050,
+            "valid_records": 27050,
+            "monotonic": true
+        },
+        "pose": {
+            "total_records": 2708,
+            "valid_quaternions": 2708,
+            "duplicate_imgids": 0,
+            "monotonic": false
+        },
+        "camera_calibration": {
+            "has_intrinsics": true,
+            "has_distortion": true,
+            "has_resolution": true
+        },
+        "synchronization": {
+            "image_to_gps": {
+                "matched_count": 350,
+                "match_rate": 1.0,
+                "mean_time_diff_sec": 0.0,
+                "max_time_diff_sec": 0.0
+            },
+            "image_to_imu": {
+                "matched_count": 350,
+                "match_rate": 1.0,
+                "mean_time_diff_sec": 0.02453,
+                "max_time_diff_sec": 0.081777
+            },
+            "exact_ground_truth_association": {
+                "total_images": 350,
+                "exact_keyframe_matches": 12,
+                "unmatched_intermediate_frames": 338,
+                "exact_keyframe_match_rate": 0.0343,
+                "association_method": "EXACT_ID"
+            }
+        }
+    },
+    "issues": []
+}

@@ -1,0 +1,60 @@
+{
+    "pose_count": 2708,
+    "valid_pose_count": 2708,
+    "coordinate_frame": "Local_ENU",
+    "start_timestamp_seconds": 7.009129,
+    "end_timestamp_seconds": 2707.033333,
+    "duration_seconds": 2700.024204,
+    "spatial_extent": {
+        "min_x": -189.642,
+        "max_x": 168.212,
+        "span_x": 357.854,
+        "min_y": -231.633,
+        "max_y": 333.409,
+        "span_y": 565.042,
+        "min_z": -8.868,
+        "max_z": 19.942,
+        "span_z": 28.81,
+        "unit": "meter"
+    },
+    "trajectory_length_meters": 1915.625,
+    "mean_speed_mps": 0.709,
+    "average_speed_mps": 0.709,
+    "median_speed_mps": 0.707,
+    "max_speed_mps": 1.925,
+    "dataset_source": "Zurich Urban MAV Dataset (AGZ)",
+    "origin_utm_coordinates": {
+        "x_easting": 465666.057548,
+        "y_northing": 5247973.646622,
+        "z_altitude": 469.019496,
+        "unit": "meter"
+    },
+    "gps_statistics": {
+        "gps_record_count": 81169,
+        "min_latitude": 47.3822502,
+        "max_latitude": 47.3873331,
+        "latitude_span_deg": 0.0050829,
+        "min_longitude": 8.5425953,
+        "max_longitude": 8.547358,
+        "longitude_span_deg": 0.0047627,
+        "min_altitude_meters": 448.96,
+        "max_altitude_meters": 519.3,
+        "altitude_span_meters": 70.34
+    },
+    "authoritative_groundtruth_association": {
+        "total_images": 350,
+        "exact_keyframe_matches": 12,
+        "unmatched_intermediate_frames": 338,
+        "match_rate": 0.0343,
+        "association_method": "EXACT_ID"
+    },
+    "asynchronous_timestamp_synchronization": {
+        "total_images": 350,
+        "matched_poses": 36,
+        "unmatched_images": 314,
+        "match_rate": 0.1029,
+        "mean_time_diff_sec": 0.021478,
+        "max_time_diff_sec": 0.048305,
+        "association_method": "TIMESTAMP_NEAREST"
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "dataset_name": "Zurich Urban MAV Dataset (AGZ)",
+    "source_type": "UAV Urban Aerial Flight",
+    "original_root": "D:\\SIH26158\\datasets\\zurich_mav",
+    "export_timestamp_utc": "2026-08-29T19:55:45.220251+00:00",
+    "record_counts": {
+        "images": 350,
+        "gps": 81169,
+        "imu": 27050,
+        "pose": 2708
+    },
+    "metadata": {}
+}

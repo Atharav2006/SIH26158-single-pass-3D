@@ -14,7 +14,12 @@ DEFAULT_CONFIG = {
         "log_file_path": "outputs/reports/pipeline.log"
     },
     "ingestion": {
-        "allowed_formats": [".mp4", ".avi", ".mov", ".mkv"]
+        "allowed_formats": [".mp4", ".avi", ".mov", ".mkv"],
+        "extraction_fps": None,
+        "output_image_format": "jpg",
+        "output_image_quality": 2,
+        "output_width": None,
+        "output_height": None
     },
     "frame_selection": {
         "method": "laplacian_variance",

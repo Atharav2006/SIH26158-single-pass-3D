@@ -1,0 +1,7 @@
+{
+    "expected_duration": 10.0,
+    "expected_fps": 30.0,
+    "expected_frame_count": 300,
+    "expected_width": 1920,
+    "expected_height": 1080
+}

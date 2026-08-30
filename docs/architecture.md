@@ -72,3 +72,18 @@ graph TD
 
 ### 12. Visualization (`src/visualization`)
 * **Role**: Renders the 3D model and trajectory for user review and validation.
+
+---
+
+## Data Association & Synchronization Policy
+
+To ensure deterministic, reproducible sensor association across diverse drone datasets, the system enforces a strict 3-tier hierarchy:
+
+$$\text{Exact Source ID} \succ \text{Explicit Dataset Relationship} \succ \text{Nearest-Neighbor Timestamp Synchronization}$$
+
+1. **Exact Source ID (`EXACT_ID`)**:
+   - Primary and authoritative for discrete ground-truth keyframes tied to explicit image identifiers (e.g. `imgid` in Zurich MAV `GroundTruthAGL.csv`).
+2. **Explicit Dataset Relationship**:
+   - Secondary mapping based on explicit index tables or container stream relationships.
+3. **Timestamp Synchronization (`TIMESTAMP_NEAREST`)**:
+   - Standard for continuous, asynchronous telemetry streams (GNSS, IMU, Barometer, Onboard State) using microsecond-precision nearest-neighbor matching within bounded tolerance windows ($\le \tau$). Intermediate video frames lacking discrete ground-truth keyframes are never falsely marked as ground truth.
