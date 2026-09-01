@@ -47,6 +47,31 @@ def reconstruct_video(args):
         "rtk": SensorDetector.detect(spec.rtk_path).value
     }
     
+    # B6.1 Phase 8 - Generic Pipeline Providers
+    from src.reconstruction.providers import ColmapPoseProvider, ColmapCalibrationProvider
+    
+    pose_diagnostics = {}
+    calib_diagnostics = {}
+    
+    # If poses are missing, attempt auto-pose estimation
+    if not spec.poses_path:
+        print("No poses provided. Attempting COLMAP automatic pose estimation...")
+        pose_provider = ColmapPoseProvider(session)
+        pose_res = pose_provider.estimate_poses()
+        pose_diagnostics = pose_res
+        if pose_res["status"] in ["POSE_ESTIMATION_READY", "POSE_QUALITY_LOW"]:
+            # Auto-pose was successful enough to produce a file
+            spec.poses_path = Path(pose_res["poses_path"])
+            
+            # If calibration was missing, we can now parse the COLMAP estimated calibration
+            if not spec.calibration_path:
+                print("No calibration provided. Attempting COLMAP auto-calibration extraction...")
+                calib_provider = ColmapCalibrationProvider(session)
+                calib_res = calib_provider.estimate_calibration()
+                calib_diagnostics = calib_res
+                if calib_res["status"] in ["CALIBRATION_READY", "CALIBRATION_UNCERTAIN"]:
+                    spec.calibration_path = Path(calib_res["calibration_path"])
+    
     # Phase 6 - Select Mode
     mode = ModeSelector.evaluate(spec)
     
@@ -94,7 +119,9 @@ def reconstruct_video(args):
         "coordinate_frame": result.coordinate_frame,
         "status": result.status,
         "warnings": result.warnings,
-        "runtime_sec": end_time - start_time
+        "runtime_sec": end_time - start_time,
+        "pose_diagnostics": pose_diagnostics,
+        "calib_diagnostics": calib_diagnostics
     }
     
     with open(session.get_path("exports/reconstruction_summary.json"), 'w') as f:
