@@ -1,0 +1,15 @@
+reconstruction:
+  frame_extraction:
+    fps: 5
+    max_frames: 350
+  depth_model:
+    type: "midas"
+    model_type: "DPT_Large"
+  fusion:
+    voxel_size: 0.05
+    confidence_threshold: 0.15
+    consistency_threshold: 0.5
+hardware:
+  device: "cuda"
+  max_ram_gb: 16
+  max_vram_gb: 8

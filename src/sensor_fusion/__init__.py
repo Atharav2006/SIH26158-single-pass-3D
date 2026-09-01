@@ -1,1 +1,1 @@
-# Package: src.sensor_fusion
+# Sensor fusion package initialization

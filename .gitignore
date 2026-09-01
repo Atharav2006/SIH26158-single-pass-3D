@@ -80,7 +80,18 @@ datasets/zurich_mav/*.tar.gz
 *.sqlite
 *.sqlite3
 
-# COLMAP workspaces & intermediate logs
+# Large neural weights & point cloud files
+*.pt
+*.pth
+*.ckpt
+*.ply
+*.las
+*.bin
+!data/samples/**/*.bin
+
+# Scratch & temporary workspace
+scratch/
+task.md
 colmap_workspace/
 colmap.log
 *.log
