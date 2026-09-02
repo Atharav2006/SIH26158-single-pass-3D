@@ -34,8 +34,20 @@ def reconstruct_video(args):
             rtk_path=Path(args.rtk) if args.rtk else None
         )
     except FileNotFoundError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+        output = {
+            "status": "RECONSTRUCTION_BLOCKED",
+            "missing_requirements": ["valid_video_file"],
+            "selected_mode": None,
+            "recommended_action": f"INPUT_INVALID: {e}",
+            "pose_diagnostics": {},
+            "calib_diagnostics": {}
+        }
+        out_file = session.get_path("diagnostics/status.json")
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_file, 'w') as f:
+            json.dump(output, f, indent=4)
+        print(json.dumps(output, indent=2))
+        return output
         
     # Phase 2 - Validate Video
     metadata = VideoValidator.validate(spec.video_path)
@@ -81,7 +93,9 @@ def reconstruct_video(args):
             "status": mode.status,
             "missing_requirements": mode.missing_requirements,
             "selected_mode": mode.selected_mode,
-            "recommended_action": mode.recommended_action
+            "recommended_action": mode.recommended_action,
+            "pose_diagnostics": pose_diagnostics,
+            "calib_diagnostics": calib_diagnostics
         }
         out_file = session.get_path("diagnostics/status.json")
         with open(out_file, 'w') as f:
@@ -90,13 +104,19 @@ def reconstruct_video(args):
         return output
         
     # Phase 7 & 8 - Run Backend
-    # If mode allows relative, run relative backend (we don't have a metric backend implemented yet)
-    backend = RelativeDepthBackend()
+    is_metric = (mode.selected_mode == "METRIC_RECONSTRUCTION")
+    
+    if is_metric:
+        from src.reconstruction.reconstruction_backend import MetricDepthBackend
+        backend = MetricDepthBackend()
+    else:
+        from src.reconstruction.reconstruction_backend import RelativeDepthBackend
+        backend = RelativeDepthBackend()
+        
     backend.prepare(session, mode)
     geom_path = backend.run(session)
     
     # Final Result
-    is_metric = (mode.selected_mode == "METRIC_RECONSTRUCTION")
     
     result = ReconstructionResult(
         geometry_path=geom_path,

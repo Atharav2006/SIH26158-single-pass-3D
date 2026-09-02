@@ -1,0 +1,187 @@
+[
+    {
+        "dataset_id":  "UASG2023_DELHI_DENSE_URBAN",
+        "dataset_name":  "UASG 2023 Dense Urban - Delhi",
+        "country":  "India",
+        "region":  "Delhi",
+        "scene_type":  "Dense Urban",
+        "source_url":  "https://www.iitr.ac.in/uasg2023/datasets.html",
+        "access_status":  "requested",
+        "license_status":  "RESEARCH_ONLY",
+        "expected_data_type":  [
+                                   "images"
+                               ],
+        "expected_camera_metadata":  true,
+        "expected_pose_metadata":  false,
+        "expected_ground_truth":  false,
+        "reconstruction_role":  "PRIMARY_3D_BENCHMARK",
+        "citation":  "Dr. Kamal Jain, IIT Roorkee",
+        "permission_required":  true,
+        "notes":  "Phantom 4 RTK. RTK available."
+    },
+    {
+        "dataset_id":  "UASG2023_DELHI_URBAN_AGRICULTURE",
+        "dataset_name":  "UASG 2023 Urban Agriculture - Delhi",
+        "country":  "India",
+        "region":  "Delhi",
+        "scene_type":  "Urban Agriculture",
+        "source_url":  "https://www.iitr.ac.in/uasg2023/datasets.html",
+        "access_status":  "requested",
+        "license_status":  "RESEARCH_ONLY",
+        "expected_data_type":  [
+                                   "images"
+                               ],
+        "expected_camera_metadata":  true,
+        "expected_pose_metadata":  false,
+        "expected_ground_truth":  false,
+        "reconstruction_role":  "SECONDARY_3D_TEST",
+        "citation":  "Dr. Kamal Jain, IIT Roorkee",
+        "permission_required":  true,
+        "notes":  "Phantom 4 RTK."
+    },
+    {
+        "dataset_id":  "UASG2023_GUJARAT_DENSE_FOREST",
+        "dataset_name":  "UASG 2023 Dense Forest - Gujarat",
+        "country":  "India",
+        "region":  "Gujarat",
+        "scene_type":  "Dense Forest",
+        "source_url":  "https://www.iitr.ac.in/uasg2023/datasets.html",
+        "access_status":  "requested",
+        "license_status":  "RESEARCH_ONLY",
+        "expected_data_type":  [
+                                   "images"
+                               ],
+        "expected_camera_metadata":  true,
+        "expected_pose_metadata":  false,
+        "expected_ground_truth":  false,
+        "reconstruction_role":  "SECONDARY_3D_TEST",
+        "citation":  "Dr. Kamal Jain, IIT Roorkee",
+        "permission_required":  true,
+        "notes":  "DJI Matrice 300 L1."
+    },
+    {
+        "dataset_id":  "UASG2023_NAGALAND_LANDSLIDE",
+        "dataset_name":  "UASG 2023 Landslide - Nagaland",
+        "country":  "India",
+        "region":  "Nagaland",
+        "scene_type":  "Disaster/Landslide",
+        "source_url":  "https://www.iitr.ac.in/uasg2023/datasets.html",
+        "access_status":  "requested",
+        "license_status":  "RESEARCH_ONLY",
+        "expected_data_type":  [
+                                   "images"
+                               ],
+        "expected_camera_metadata":  true,
+        "expected_pose_metadata":  false,
+        "expected_ground_truth":  false,
+        "reconstruction_role":  "SECONDARY_3D_TEST",
+        "citation":  "Dr. Kamal Jain, IIT Roorkee",
+        "permission_required":  true,
+        "notes":  "Phantom 4 Pro V2."
+    },
+    {
+        "dataset_id":  "MANIPAL_UAVID",
+        "dataset_name":  "ManipalUAVid",
+        "country":  "India",
+        "region":  "Manipal, Karnataka",
+        "scene_type":  "Campus/Urban",
+        "source_url":  "https://github.com/uverma/ManipalUAVid",
+        "access_status":  "requested",
+        "license_status":  "RESEARCH_ONLY",
+        "expected_data_type":  [
+                                   "video",
+                                   "semantic_labels"
+                               ],
+        "expected_camera_metadata":  false,
+        "expected_pose_metadata":  false,
+        "expected_ground_truth":  false,
+        "reconstruction_role":  "VIDEO_ONLY_TEST",
+        "citation":  "Girisha et al., IEEE Access 2019",
+        "permission_required":  true,
+        "notes":  "Requires Google Form approval."
+    },
+    {
+        "dataset_id":  "MUAAD",
+        "dataset_name":  "MUAAD (Manipal UAV Anomaly Activity Dataset)",
+        "country":  "India",
+        "region":  "Manipal, Karnataka",
+        "scene_type":  "Campus/Urban",
+        "source_url":  "https://github.com/uverma/MUAAD",
+        "access_status":  "requested",
+        "license_status":  "UNCLEAR",
+        "expected_data_type":  [
+                                   "video",
+                                   "anomaly_labels"
+                               ],
+        "expected_camera_metadata":  false,
+        "expected_pose_metadata":  false,
+        "expected_ground_truth":  false,
+        "reconstruction_role":  "NOT_SUITABLE_FOR_3D",
+        "citation":  "MUAAD Authors",
+        "permission_required":  true,
+        "notes":  "Anomaly detection focus."
+    },
+    {
+        "dataset_id":  "SKYEYE_AHMEDABAD",
+        "dataset_name":  "SkyEye - Ahmedabad",
+        "country":  "India",
+        "region":  "Ahmedabad, Gujarat",
+        "scene_type":  "Traffic Intersection",
+        "source_url":  "https://github.com/debadityaroy/SkyEye",
+        "access_status":  "identified",
+        "license_status":  "UNCLEAR",
+        "expected_data_type":  [
+                                   "video",
+                                   "detection_labels"
+                               ],
+        "expected_camera_metadata":  false,
+        "expected_pose_metadata":  false,
+        "expected_ground_truth":  false,
+        "reconstruction_role":  "DYNAMIC_OBJECT",
+        "citation":  "Debaditya Roy et al.",
+        "permission_required":  false,
+        "notes":  "Publicly downloadable, but license unclear."
+    },
+    {
+        "dataset_id":  "IHUB_DATA_DRONE_INFRASTRUCTURE",
+        "dataset_name":  "IIIT-H iHub-Data Drone Infrastructure",
+        "country":  "India",
+        "region":  "Hyderabad, Telangana",
+        "scene_type":  "Infrastructure/Campus",
+        "source_url":  "https://ihub-data.iiit.ac.in/",
+        "access_status":  "requested",
+        "license_status":  "UNCLEAR",
+        "expected_data_type":  [
+                                   "images",
+                                   "semantic_labels"
+                               ],
+        "expected_camera_metadata":  false,
+        "expected_pose_metadata":  false,
+        "expected_ground_truth":  false,
+        "reconstruction_role":  "SEMANTIC_ONLY",
+        "citation":  "IIIT Hyderabad iHub-Data",
+        "permission_required":  true,
+        "notes":  "Building parameters, windows, storeys."
+    },
+    {
+        "source_url":  "https://data.mendeley.com/datasets/nmxysw8ybx/1",
+        "reconstruction_role":  "PRIMARY_3D_BENCHMARK",
+        "notes":  "ZIP contains only 1 orthophoto (535MB) and 1 3D model .bin (4.6GB). ZERO input UAV photographs provided. Unusable for reconstruction validation.",
+        "access_status":  "downloaded",
+        "permission_required":  false,
+        "expected_data_type":  [
+                                   "orthophoto",
+                                   "mesh"
+                               ],
+        "dataset_name":  "IIT Gandhinagar UAV Photogrammetry Dataset",
+        "license_status":  "CC BY-NC 3.0",
+        "expected_pose_metadata":  null,
+        "dataset_id":  "IIT_GANDHINAGAR_UAV_PHOTOGRAMMETRY",
+        "region":  "Gandhinagar, Gujarat",
+        "citation":  "IIT Gandhinagar Authors",
+        "scene_type":  "Campus/Outcrop",
+        "country":  "India",
+        "expected_camera_metadata":  null,
+        "expected_ground_truth":  null
+    }
+]

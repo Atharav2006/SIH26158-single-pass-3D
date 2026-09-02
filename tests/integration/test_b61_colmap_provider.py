@@ -6,6 +6,7 @@ from argparse import Namespace
 
 from pipelines.application.reconstruct_video import reconstruct_video
 from tests.integration.synthetic_texture_video import generate_textured_video
+from src.reconstruction.session import ReconstructionSession
 
 @pytest.fixture
 def textured_dataset(tmp_path):
@@ -48,7 +49,6 @@ def test_b61_case_b_supplied_calib_auto_pose(textured_dataset, tmp_path):
     # We must explicitly copy the frames into the session so COLMAP finds them, 
     # since reconstruct_video currently skips the FFmpeg extraction phase in testing mockup.
     # To properly simulate it, let's manually place frames where the session expects them.
-    from src.reconstruction.session import ReconstructionSession
     sess = ReconstructionSession("session_b", str(tmp_path))
     for f in frames_dir.glob("*.jpg"):
         shutil.copy(f, sess.frames_dir / f.name)

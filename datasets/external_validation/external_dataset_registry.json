@@ -1,0 +1,27 @@
+[
+    {
+        "dataset_id": "SHERBROOKE_UAV_3D",
+        "dataset_name": "Unmanned aerial image dataset: Ready for 3D reconstruction",
+        "country": "Canada",
+        "region": "Sherbrooke, Quebec",
+        "scene_type": "Campus/Urban",
+        "source_url": "https://data.mendeley.com/datasets/Sherbrooke",
+        "access_status": "downloaded",
+        "license_status": "PUBLIC_OPEN",
+        "expected_data_type": [
+            "images",
+            "gcp",
+            "laser_scan",
+            "dense_matching",
+            "camera_metadata",
+            "pose_metadata"
+        ],
+        "expected_camera_metadata": true,
+        "expected_pose_metadata": true,
+        "expected_ground_truth": true,
+        "reconstruction_role": "PRIMARY_3D_BENCHMARK",
+        "citation": "Sherbrooke UAV Authors",
+        "permission_required": false,
+        "notes": "Complete package downloaded. Independent TLS and GCPs present. READY_FOR_METRIC_VALIDATION."
+    }
+]
