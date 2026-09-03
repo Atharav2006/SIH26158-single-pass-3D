@@ -1,0 +1,234 @@
+import os
+import shutil
+import tempfile
+from typing import Optional, Dict, Any, List
+from pathlib import Path
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, status
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from src.backend.session_manager import BackendSessionManager, SessionManagerError
+from src.backend.input_manager import BackendInputManager, InputManagerError
+from src.backend.job_manager import BackendJobManager, JobManagerError
+
+app = FastAPI(
+    title="Member 4 Backend API",
+    description="REST API layer for session, input, and job management.",
+    version="0.1.0"
+)
+
+# Configuration for CORS - Do not use wildcard unless explicitly required for dev.
+# Configurable through environment, defaulting to none to avoid permissive production default.
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
+if ALLOWED_ORIGINS and ALLOWED_ORIGINS != [""]:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+# --- Dependency Providers ---
+
+def get_session_manager() -> BackendSessionManager:
+    # In a real app, this might pull from app.state or a config module
+    # For now, default workspace
+    return BackendSessionManager()
+
+def get_input_manager(session_manager: BackendSessionManager = Depends(get_session_manager)) -> BackendInputManager:
+    return BackendInputManager(session_manager)
+
+def get_job_manager(session_manager: BackendSessionManager = Depends(get_session_manager)) -> BackendJobManager:
+    return BackendJobManager(session_manager)
+
+# --- Schemas ---
+
+class SessionCreateRequest(BaseModel):
+    metadata: Optional[Dict[str, Any]] = None
+
+class JobCreateRequest(BaseModel):
+    reconstruction_mode: Optional[str] = None
+
+class JobStatusUpdateRequest(BaseModel):
+    status: str
+    error: Optional[str] = None
+    result_metadata: Optional[Dict[str, Any]] = None
+
+# --- Error Mappers ---
+
+def map_exception_to_http(e: Exception):
+    """Safely maps internal exceptions to HTTP errors without leaking sensitive data."""
+    err_str = str(e).lower()
+    
+    if isinstance(e, SessionManagerError):
+        if "not found" in err_str or "does not exist" in err_str or "invalid session id format" in err_str:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        
+    if isinstance(e, InputManagerError):
+        if "exceeds maximum allowed" in err_str:
+            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Upload file is too large")
+        if "unsupported file extension" in err_str:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported file extension")
+        if "missing" in err_str or "not found" in err_str or "does not exist" in err_str or "invalid session id format" in err_str:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Input file or session not found")
+        if "traversal" in err_str or "invalid" in err_str:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request path")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        
+    if isinstance(e, JobManagerError):
+        if "not found" in err_str or "does not exist" in err_str or "invalid job id format" in err_str:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+        if "transition" in err_str or "invalid state" in err_str:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invalid job state transition")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected internal error occurred")
+
+# --- Session Endpoints ---
+
+@app.post("/sessions", status_code=status.HTTP_201_CREATED)
+def create_session(
+    request: Optional[SessionCreateRequest] = None,
+    session_manager: BackendSessionManager = Depends(get_session_manager)
+):
+    try:
+        initial_meta = request.metadata if request else {}
+        session_id = session_manager.create_session(initial_meta)
+        return {"session_id": session_id, "status": "created"}
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.get("/sessions/{session_id}")
+def get_session(
+    session_id: str,
+    session_manager: BackendSessionManager = Depends(get_session_manager)
+):
+    try:
+        session_data = session_manager.get_session(session_id)
+        return session_data
+    except Exception as e:
+        map_exception_to_http(e)
+
+# --- Input Endpoints ---
+
+@app.post("/sessions/{session_id}/inputs", status_code=status.HTTP_201_CREATED)
+async def upload_input(
+    session_id: str,
+    file: UploadFile = File(...),
+    input_type: Optional[str] = Form(None),
+    input_manager: BackendInputManager = Depends(get_input_manager)
+):
+    original_filename = file.filename or "unknown"
+    temp_path = None
+    
+    try:
+        # Securely stage upload to a temporary file first
+        fd, temp_path_str = tempfile.mkstemp()
+        temp_path = Path(temp_path_str)
+        
+        with os.fdopen(fd, 'wb') as out_file:
+            shutil.copyfileobj(file.file, out_file)
+            
+        # Delegate validation and actual staging to BackendInputManager
+        record = input_manager.save_input(
+            session_id=session_id,
+            source_path=temp_path,
+            original_filename=original_filename,
+            input_type=input_type
+        )
+        return record
+        
+    except Exception as e:
+        map_exception_to_http(e)
+    finally:
+        # Cleanup temporary upload artifact
+        if temp_path and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
+
+@app.get("/sessions/{session_id}/inputs")
+def list_inputs(
+    session_id: str,
+    input_manager: BackendInputManager = Depends(get_input_manager)
+):
+    try:
+        inputs = input_manager.list_inputs(session_id)
+        return inputs
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.get("/sessions/{session_id}/inputs/{stored_filename}")
+def download_input(
+    session_id: str,
+    stored_filename: str,
+    input_manager: BackendInputManager = Depends(get_input_manager)
+):
+    try:
+        file_path = input_manager.get_input_path(session_id, stored_filename)
+        return FileResponse(path=file_path, filename=stored_filename)
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.delete("/sessions/{session_id}/inputs/{stored_filename}")
+def delete_input(
+    session_id: str,
+    stored_filename: str,
+    input_manager: BackendInputManager = Depends(get_input_manager)
+):
+    try:
+        input_manager.delete_input(session_id, stored_filename)
+        return {"detail": "Input deleted successfully"}
+    except Exception as e:
+        map_exception_to_http(e)
+
+# --- Job Endpoints ---
+
+@app.post("/sessions/{session_id}/jobs", status_code=status.HTTP_201_CREATED)
+def create_job(
+    session_id: str,
+    request: JobCreateRequest,
+    job_manager: BackendJobManager = Depends(get_job_manager)
+):
+    try:
+        job_id = job_manager.create_job(session_id, request.reconstruction_mode)
+        return {"job_id": job_id, "session_id": session_id, "status": "queued"}
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.get("/jobs/{job_id}")
+def get_job(
+    job_id: str,
+    job_manager: BackendJobManager = Depends(get_job_manager)
+):
+    try:
+        job_data = job_manager.get_job(job_id)
+        return job_data
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.post("/jobs/{job_id}/status")
+def update_job_status(
+    job_id: str,
+    request: JobStatusUpdateRequest,
+    job_manager: BackendJobManager = Depends(get_job_manager)
+):
+    """
+    INTERNAL/DEVELOPMENT endpoint.
+    Future worker integration will own these status transitions.
+    """
+    try:
+        job_manager.update_job_status(
+            job_id=job_id,
+            status=request.status,
+            error=request.error,
+            result_metadata=request.result_metadata
+        )
+        return job_manager.get_job(job_id)
+    except Exception as e:
+        map_exception_to_http(e)
