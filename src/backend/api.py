@@ -17,6 +17,7 @@ from src.backend.input_manager import BackendInputManager, InputManagerError
 from src.backend.job_manager import BackendJobManager, JobManagerError
 from src.backend.reconstruction_worker import BackendReconstructionWorker
 from src.backend.execution_manager import BackgroundExecutionManager
+from src.backend.result_manager import BackendResultManager, ResultManagerError, ResultConflictError
 
 # --- Global State ---
 # In a full app, these would ideally be bound to app.state
@@ -27,6 +28,7 @@ _metadata_store.initialize()
 _session_manager = BackendSessionManager(metadata_store=_metadata_store)
 _input_manager = BackendInputManager(_session_manager)
 _job_manager = BackendJobManager(_session_manager)
+_result_manager = BackendResultManager(_session_manager, _job_manager)
 _worker = BackendReconstructionWorker(_session_manager, _input_manager, _job_manager)
 _execution_manager = BackgroundExecutionManager(_worker)
 
@@ -88,6 +90,14 @@ def get_execution_manager(
     worker = BackendReconstructionWorker(session_manager, input_manager, job_manager)
     return BackgroundExecutionManager(worker)
 
+def get_result_manager(
+    session_manager: BackendSessionManager = Depends(get_session_manager),
+    job_manager: BackendJobManager = Depends(get_job_manager)
+) -> BackendResultManager:
+    if session_manager is _session_manager:
+        return _result_manager
+    return BackendResultManager(session_manager, job_manager)
+
 # --- Schemas ---
 
 class SessionCreateRequest(BaseModel):
@@ -100,6 +110,9 @@ class JobStatusUpdateRequest(BaseModel):
     status: str
     error: Optional[str] = None
     result_metadata: Optional[Dict[str, Any]] = None
+
+class ExportRequest(BaseModel):
+    destination_filename: str
 
 # --- Error Mappers ---
 
@@ -128,6 +141,14 @@ def map_exception_to_http(e: Exception):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
         if "transition" in err_str or "invalid state" in err_str:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invalid job state transition")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        
+    if isinstance(e, ResultConflictError):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        
+    if isinstance(e, ResultManagerError):
+        if "not found" in err_str:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected internal error occurred")
@@ -292,5 +313,49 @@ def update_job_status(
             result_metadata=request.result_metadata
         )
         return job_manager.get_job(job_id)
+    except Exception as e:
+        map_exception_to_http(e)
+
+# --- Result Endpoints ---
+
+@app.get("/sessions/{session_id}/jobs/{job_id}/results")
+def list_results(
+    session_id: str,
+    job_id: str,
+    result_manager: BackendResultManager = Depends(get_result_manager)
+):
+    try:
+        results = result_manager.list_results(session_id, job_id)
+        return results
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.get("/sessions/{session_id}/jobs/{job_id}/results/{result_id}")
+def download_result(
+    session_id: str,
+    job_id: str,
+    result_id: str,
+    result_manager: BackendResultManager = Depends(get_result_manager)
+):
+    try:
+        file_path = result_manager.get_result_path(session_id, job_id, result_id)
+        # Using the actual filename for the download
+        return FileResponse(path=file_path, filename=file_path.name)
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.post("/sessions/{session_id}/jobs/{job_id}/results/{result_id}/export")
+def export_result(
+    session_id: str,
+    job_id: str,
+    result_id: str,
+    request: ExportRequest,
+    result_manager: BackendResultManager = Depends(get_result_manager)
+):
+    try:
+        metadata = result_manager.export_result(
+            session_id, job_id, result_id, request.destination_filename
+        )
+        return metadata
     except Exception as e:
         map_exception_to_http(e)
