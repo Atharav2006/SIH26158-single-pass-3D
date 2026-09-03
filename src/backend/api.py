@@ -9,14 +9,37 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from contextlib import asynccontextmanager
+
 from src.backend.session_manager import BackendSessionManager, SessionManagerError
 from src.backend.input_manager import BackendInputManager, InputManagerError
 from src.backend.job_manager import BackendJobManager, JobManagerError
+from src.backend.reconstruction_worker import BackendReconstructionWorker
+from src.backend.execution_manager import BackgroundExecutionManager
+
+# --- Global State ---
+# In a full app, these would ideally be bound to app.state
+_session_manager = BackendSessionManager()
+_input_manager = BackendInputManager(_session_manager)
+_job_manager = BackendJobManager(_session_manager)
+_worker = BackendReconstructionWorker(_session_manager, _input_manager, _job_manager)
+_execution_manager = BackgroundExecutionManager(_worker)
+
+import sys
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    yield
+    # Shutdown
+    if "pytest" not in sys.modules:
+        _execution_manager.shutdown(wait=False)
 
 app = FastAPI(
     title="Member 4 Backend API",
     description="REST API layer for session, input, and job management.",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # Configuration for CORS - Do not use wildcard unless explicitly required for dev.
@@ -34,15 +57,31 @@ if ALLOWED_ORIGINS and ALLOWED_ORIGINS != [""]:
 # --- Dependency Providers ---
 
 def get_session_manager() -> BackendSessionManager:
-    # In a real app, this might pull from app.state or a config module
-    # For now, default workspace
-    return BackendSessionManager()
+    return _session_manager
 
 def get_input_manager(session_manager: BackendSessionManager = Depends(get_session_manager)) -> BackendInputManager:
+    # We still need to return an instance bound to the resolved session_manager
+    # In production this is _session_manager and returns the global _input_manager,
+    # but in tests it might be a mocked session manager.
+    if session_manager is _session_manager:
+        return _input_manager
     return BackendInputManager(session_manager)
 
 def get_job_manager(session_manager: BackendSessionManager = Depends(get_session_manager)) -> BackendJobManager:
+    if session_manager is _session_manager:
+        return _job_manager
     return BackendJobManager(session_manager)
+
+def get_execution_manager(
+    job_manager: BackendJobManager = Depends(get_job_manager),
+    input_manager: BackendInputManager = Depends(get_input_manager),
+    session_manager: BackendSessionManager = Depends(get_session_manager)
+) -> BackgroundExecutionManager:
+    if session_manager is _session_manager:
+        return _execution_manager
+    # If overridden for tests, create a temporary worker and execution manager
+    worker = BackendReconstructionWorker(session_manager, input_manager, job_manager)
+    return BackgroundExecutionManager(worker)
 
 # --- Schemas ---
 
@@ -198,6 +237,24 @@ def create_job(
     try:
         job_id = job_manager.create_job(session_id, request.reconstruction_mode)
         return {"job_id": job_id, "session_id": session_id, "status": "queued"}
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.post("/sessions/{session_id}/jobs/{job_id}/submit", status_code=status.HTTP_202_ACCEPTED)
+def submit_job(
+    session_id: str,
+    job_id: str,
+    execution_manager: BackgroundExecutionManager = Depends(get_execution_manager)
+):
+    """
+    Submits a queued job for background execution.
+    Returns immediately after queueing.
+    """
+    try:
+        execution_manager.submit(job_id, session_id)
+        return {"job_id": job_id, "status": "submitted"}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         map_exception_to_http(e)
 

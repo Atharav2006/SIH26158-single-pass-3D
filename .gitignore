@@ -104,3 +104,5 @@ colmap.log
 *.njsproj
 *.sln
 *.swp
+
+data/backend_workspaces/
