@@ -24,6 +24,24 @@ class BackendInputManager:
         self.session_manager = session_manager
         self.max_file_size_bytes = max_file_size_bytes
 
+    def _check_input_lock(self, session_id: str) -> None:
+        """
+        Checks whether the session is locked from input mutations.
+        Inputs cannot be modified if a job is in 'queued', 'processing', or 'completed' state.
+        Modifications are allowed if there are no jobs or all jobs are 'failed'.
+        """
+        try:
+            # Check jobs directly from the metadata store.
+            jobs = self.session_manager.store.list_jobs(session_id)
+            for job in jobs:
+                if job.get("status") in ("queued", "processing", "completed"):
+                    raise InputManagerError(f"Inputs are locked because job {job['job_id']} is in '{job.get('status')}' state.")
+        except InputManagerError:
+            raise
+        except Exception:
+            # If session doesn't exist or DB error, let downstream logic handle it
+            pass
+
     def _sanitize_filename(self, filename: str) -> str:
         """Removes dangerous characters, path separators, and null bytes from a filename."""
         if not filename:
@@ -89,49 +107,51 @@ class BackendInputManager:
 
     def save_input(self, session_id: str, source_path: Union[str, Path], original_filename: str, input_type: Optional[str] = None) -> Dict[str, Any]:
         """Safely stages a file into the session's isolated inputs directory."""
-        source_path = Path(source_path)
-        
-        if not source_path.is_file():
-            raise InputManagerError(f"Source file does not exist or is not a file: {source_path}")
+        with self.session_manager.session_lock(session_id):
+            self._check_input_lock(session_id)
+            source_path = Path(source_path)
             
-        file_size = source_path.stat().st_size
-        if file_size > self.max_file_size_bytes:
-            raise InputManagerError(f"File size {file_size} exceeds maximum allowed {self.max_file_size_bytes} bytes.")
+            if not source_path.is_file():
+                raise InputManagerError(f"Source file does not exist or is not a file: {source_path}")
+                
+            file_size = source_path.stat().st_size
+            if file_size > self.max_file_size_bytes:
+                raise InputManagerError(f"File size {file_size} exceeds maximum allowed {self.max_file_size_bytes} bytes.")
+                
+            ext = self._validate_extension(original_filename)
+            sanitized_original = self._sanitize_filename(original_filename)
             
-        ext = self._validate_extension(original_filename)
-        sanitized_original = self._sanitize_filename(original_filename)
-        
-        # Generate a secure stored filename: <uuid4>_<sanitized>
-        stored_filename = f"{uuid.uuid4()}_{sanitized_original}"
-        
-        inputs_dir = self._get_inputs_dir(session_id)
-        dest_path = (inputs_dir / stored_filename).resolve()
-        
-        # Security: ensure path resolves strictly inside inputs directory
-        if not str(dest_path).startswith(str(inputs_dir.resolve())):
-            raise InputManagerError("Path traversal attempt detected during save.")
+            # Generate a secure stored filename: <uuid4>_<sanitized>
+            stored_filename = f"{uuid.uuid4()}_{sanitized_original}"
             
-        # Copy the file
-        try:
-            shutil.copy2(source_path, dest_path)
-        except Exception as e:
-            if dest_path.exists():
-                dest_path.unlink()
-            raise InputManagerError(f"Failed to copy file safely: {str(e)}")
+            inputs_dir = self._get_inputs_dir(session_id)
+            dest_path = (inputs_dir / stored_filename).resolve()
             
-        # Register in session metadata
-        now = datetime.now(timezone.utc).isoformat()
-        file_record = {
-            "stored_filename": stored_filename,
-            "original_filename": original_filename,
-            "input_type": input_type,
-            "size_bytes": file_size,
-            "extension": ext,
-            "created_at": now
-        }
-        
-        self._update_session_files_metadata(session_id, new_file_record=file_record)
-        return file_record
+            # Security: ensure path resolves strictly inside inputs directory
+            if not str(dest_path).startswith(str(inputs_dir.resolve())):
+                raise InputManagerError("Path traversal attempt detected during save.")
+                
+            # Copy the file
+            try:
+                shutil.copy2(source_path, dest_path)
+            except Exception as e:
+                if dest_path.exists():
+                    dest_path.unlink()
+                raise InputManagerError(f"Failed to copy file safely: {str(e)}")
+                
+            # Register in session metadata
+            now = datetime.now(timezone.utc).isoformat()
+            file_record = {
+                "stored_filename": stored_filename,
+                "original_filename": original_filename,
+                "input_type": input_type,
+                "size_bytes": file_size,
+                "extension": ext,
+                "created_at": now
+            }
+            
+            self._update_session_files_metadata(session_id, new_file_record=file_record)
+            return file_record
 
     def get_input_path(self, session_id: str, stored_filename: str) -> Path:
         """Retrieves and validates the secure path to a stored input file."""
@@ -159,12 +179,14 @@ class BackendInputManager:
 
     def delete_input(self, session_id: str, stored_filename: str) -> None:
         """Deletes a staged file and removes its metadata record."""
-        # get_input_path ensures the file exists and is strictly within inputs_dir
-        file_path = self.get_input_path(session_id, stored_filename)
-        
-        try:
-            file_path.unlink()
-        except Exception as e:
-            raise InputManagerError(f"Failed to delete file {stored_filename}: {str(e)}")
+        with self.session_manager.session_lock(session_id):
+            self._check_input_lock(session_id)
+            # get_input_path ensures the file exists and is strictly within inputs_dir
+            file_path = self.get_input_path(session_id, stored_filename)
             
-        self._update_session_files_metadata(session_id, remove_stored_filename=stored_filename)
+            try:
+                file_path.unlink()
+            except Exception as e:
+                raise InputManagerError(f"Failed to delete file {stored_filename}: {str(e)}")
+                
+            self._update_session_files_metadata(session_id, remove_stored_filename=stored_filename)

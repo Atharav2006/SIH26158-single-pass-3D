@@ -72,3 +72,27 @@ class BackgroundExecutionManager:
     def shutdown(self, wait: bool = True):
         """Shuts down the underlying executor."""
         self.executor.shutdown(wait=wait)
+
+    def reap_stuck_jobs(self):
+        """
+        Scans for jobs left in 'queued' or 'processing' states upon backend initialization,
+        which indicates they were orphaned by a server restart. Marks them as failed.
+        """
+        store = self.worker.job_manager.store
+        try:
+            with store._get_connection() as conn:
+                cursor = conn.execute("SELECT job_id FROM jobs WHERE status IN ('queued', 'processing')")
+                stuck_job_ids = [row[0] for row in cursor.fetchall()]
+                
+            for j_id in stuck_job_ids:
+                # Use JobManager to properly sync the failed status back to the session
+                try:
+                    self.worker.job_manager.update_job_status(
+                        j_id, 
+                        status="failed", 
+                        error="Job interrupted by backend restart"
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from src.backend.metadata_store import MetadataStore
-from src.backend.session_manager import BackendSessionManager, SessionManagerError
+from src.backend.session_manager import BackendSessionManager, SessionManagerError, SessionConflictError
 from src.backend.input_manager import BackendInputManager, InputManagerError
 from src.backend.job_manager import BackendJobManager, JobManagerError
 from src.backend.reconstruction_worker import BackendReconstructionWorker
@@ -36,7 +36,8 @@ import sys
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup: Reap any jobs left in 'queued' or 'processing' due to a restart
+    _execution_manager.reap_stuck_jobs()
     yield
     # Shutdown
     if "pytest" not in sys.modules:
@@ -120,6 +121,9 @@ def map_exception_to_http(e: Exception):
     """Safely maps internal exceptions to HTTP errors without leaking sensitive data."""
     err_str = str(e).lower()
     
+    if isinstance(e, SessionConflictError):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        
     if isinstance(e, SessionManagerError):
         if "not found" in err_str or "does not exist" in err_str or "invalid session id format" in err_str:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -134,6 +138,8 @@ def map_exception_to_http(e: Exception):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Input file or session not found")
         if "traversal" in err_str or "invalid" in err_str:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request path")
+        if "locked" in err_str:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
         
     if isinstance(e, JobManagerError):
@@ -175,6 +181,17 @@ def get_session(
     try:
         session_data = session_manager.get_session(session_id)
         return session_data
+    except Exception as e:
+        map_exception_to_http(e)
+
+@app.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(
+    session_id: str,
+    session_manager: BackendSessionManager = Depends(get_session_manager)
+):
+    try:
+        session_manager.delete_session(session_id)
+        return None
     except Exception as e:
         map_exception_to_http(e)
 
@@ -266,18 +283,31 @@ def create_job(
     except Exception as e:
         map_exception_to_http(e)
 
+@app.get("/sessions/{session_id}/jobs")
+def list_jobs(
+    session_id: str,
+    job_manager: BackendJobManager = Depends(get_job_manager)
+):
+    try:
+        jobs = job_manager.list_jobs(session_id)
+        return jobs
+    except Exception as e:
+        map_exception_to_http(e)
+
 @app.post("/sessions/{session_id}/jobs/{job_id}/submit", status_code=status.HTTP_202_ACCEPTED)
 def submit_job(
     session_id: str,
     job_id: str,
-    execution_manager: BackgroundExecutionManager = Depends(get_execution_manager)
+    execution_manager: BackgroundExecutionManager = Depends(get_execution_manager),
+    session_manager: BackendSessionManager = Depends(get_session_manager)
 ):
     """
     Submits a queued job for background execution.
     Returns immediately after queueing.
     """
     try:
-        execution_manager.submit(job_id, session_id)
+        with session_manager.session_lock(session_id):
+            execution_manager.submit(job_id, session_id)
         return {"job_id": job_id, "status": "submitted"}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -292,27 +322,6 @@ def get_job(
     try:
         job_data = job_manager.get_job(job_id)
         return job_data
-    except Exception as e:
-        map_exception_to_http(e)
-
-@app.post("/jobs/{job_id}/status")
-def update_job_status(
-    job_id: str,
-    request: JobStatusUpdateRequest,
-    job_manager: BackendJobManager = Depends(get_job_manager)
-):
-    """
-    INTERNAL/DEVELOPMENT endpoint.
-    Future worker integration will own these status transitions.
-    """
-    try:
-        job_manager.update_job_status(
-            job_id=job_id,
-            status=request.status,
-            error=request.error,
-            result_metadata=request.result_metadata
-        )
-        return job_manager.get_job(job_id)
     except Exception as e:
         map_exception_to_http(e)
 

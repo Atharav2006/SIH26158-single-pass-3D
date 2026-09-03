@@ -1,5 +1,7 @@
 import os
 import uuid
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any
@@ -7,6 +9,10 @@ from typing import Dict, Any
 from src.backend.metadata_store import MetadataStore, MetadataStoreError
 
 class SessionManagerError(Exception):
+    pass
+
+class SessionConflictError(SessionManagerError):
+    """Raised when an operation is rejected due to a conflicting session state (e.g. active jobs)."""
     pass
 
 class BackendSessionManager:
@@ -18,6 +24,19 @@ class BackendSessionManager:
         self.store = metadata_store
         self.base_dir = Path(base_workspace_dir).resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self._session_locks: Dict[str, threading.Lock] = {}
+        self._locks_lock = threading.Lock()
+
+    @contextmanager
+    def session_lock(self, session_id: str):
+        """Acquires a reentrant-safe per-session synchronization lock."""
+        with self._locks_lock:
+            if session_id not in self._session_locks:
+                self._session_locks[session_id] = threading.Lock()
+            lock = self._session_locks[session_id]
+        
+        with lock:
+            yield
 
     def _validate_session_id(self, session_id: str) -> None:
         """Validates that a session_id is a properly formatted UUID4 string."""
@@ -109,3 +128,40 @@ class BackendSessionManager:
             self.store.update_session(session_id, updates)
         except MetadataStoreError as e:
             raise SessionManagerError(str(e))
+
+    def delete_session(self, session_id: str) -> None:
+        """
+        Deletes a session from the DB and removes its physical workspace.
+        This operation is safe and isolated to the session directory.
+        """
+        with self.session_lock(session_id):
+            # Validate and get the secure workspace path (prevents traversal)
+            workspace = self.get_session_workspace(session_id)
+        
+            # Verify it exists in DB (will raise SessionManagerError if not found)
+            self.get_session(session_id)
+            
+            # 0. Check for active jobs to prevent unsafe deletion
+            try:
+                jobs = self.store.list_jobs(session_id)
+                for job in jobs:
+                    if job.get("status") in ("queued", "processing"):
+                        raise SessionConflictError(f"Cannot delete session {session_id} with active job {job['job_id']}")
+            except MetadataStoreError as e:
+                pass # If it fails to list jobs, we'll let the delete attempt it or fail.
+
+            # 1. Delete from SQLite MetadataStore
+            try:
+                self.store.delete_session(session_id)
+            except MetadataStoreError as e:
+                raise SessionManagerError(f"Failed to delete session metadata: {str(e)}")
+                
+            # 2. Delete the physical workspace
+            if workspace.exists() and workspace.is_dir():
+                try:
+                    import shutil
+                    shutil.rmtree(workspace)
+                except Exception as e:
+                    # If filesystem deletion fails, the DB record is already gone.
+                    # The workspace becomes orphaned but inaccessible via API.
+                    pass

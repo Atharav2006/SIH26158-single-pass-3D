@@ -38,34 +38,44 @@ class BackendJobManager:
 
     def create_job(self, session_id: str, reconstruction_mode: Optional[str] = None) -> str:
         """Creates a new job for a given session."""
+        with self.session_manager.session_lock(session_id):
+            if not self.session_manager.session_exists(session_id):
+                raise JobManagerError(f"Session {session_id} does not exist.")
+
+            job_id = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            
+            job_data = {
+                "job_id": job_id,
+                "session_id": session_id,
+                "status": "queued",
+                "reconstruction_mode": reconstruction_mode,
+                "created_at": now,
+                "updated_at": now,
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+                "result_metadata": {}
+            }
+
+            try:
+                self.store.create_job(job_data)
+            except MetadataStoreError as e:
+                raise JobManagerError(str(e))
+            
+            # Update session to reflect the job exists and its initial status
+            self._update_session_with_job(session_id, job_id, "queued")
+
+            return job_id
+
+    def list_jobs(self, session_id: str) -> list[Dict[str, Any]]:
+        """Retrieves all jobs for a given session."""
         if not self.session_manager.session_exists(session_id):
             raise JobManagerError(f"Session {session_id} does not exist.")
-
-        job_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
-        
-        job_data = {
-            "job_id": job_id,
-            "session_id": session_id,
-            "status": "queued",
-            "reconstruction_mode": reconstruction_mode,
-            "created_at": now,
-            "updated_at": now,
-            "started_at": None,
-            "completed_at": None,
-            "error": None,
-            "result_metadata": {}
-        }
-
         try:
-            self.store.create_job(job_data)
+            return self.store.list_jobs(session_id)
         except MetadataStoreError as e:
             raise JobManagerError(str(e))
-        
-        # Update session to reflect the job exists and its initial status
-        self._update_session_with_job(session_id, job_id, "queued")
-
-        return job_id
 
     def get_job(self, job_id: str) -> Dict[str, Any]:
         """Retrieves a job by its ID."""

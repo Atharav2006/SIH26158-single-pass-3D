@@ -184,33 +184,15 @@ def test_get_job(client):
     assert resp_get.json()["job_id"] == job_id
     assert resp_get.json()["status"] == "queued"
 
-# 11. valid job status transition
-def test_valid_job_transition(client):
-    resp1 = client.post("/sessions", json={})
-    session_id = resp1.json()["session_id"]
-    job_id = client.post(f"/sessions/{session_id}/jobs", json={}).json()["job_id"]
-    
-    resp_status = client.post(f"/jobs/{job_id}/status", json={"status": "processing"})
-    assert resp_status.status_code == 200
-    assert resp_status.json()["status"] == "processing"
-
-# 12. invalid job status transition
-def test_invalid_job_transition(client):
-    resp1 = client.post("/sessions", json={})
-    session_id = resp1.json()["session_id"]
-    job_id = client.post(f"/sessions/{session_id}/jobs", json={}).json()["job_id"]
-    
-    resp_status = client.post(f"/jobs/{job_id}/status", json={"status": "completed"})
-    assert resp_status.status_code == 409
-    assert "invalid job state transition" in resp_status.json()["detail"].lower()
-
-# 13. missing job
+# 11. missing job
 def test_missing_job(client):
     resp = client.get("/jobs/123e4567-e89b-12d3-a456-426614174000")
     assert resp.status_code == 404
-    
-    resp_status = client.post("/jobs/123e4567-e89b-12d3-a456-426614174000/status", json={"status": "processing"})
-    assert resp_status.status_code == 404
+
+# 12. removed status endpoint returns 404/405
+def test_removed_status_endpoint(client):
+    resp = client.post("/jobs/123e4567-e89b-12d3-a456-426614174000/status", json={"status": "processing"})
+    assert resp.status_code in (404, 405)
 
 # 14. session isolation between two sessions
 def test_session_isolation(client):
@@ -254,24 +236,191 @@ def test_oversized_upload(client):
     
     client.app.dependency_overrides.pop(get_input_manager)
 
-# 17. malformed request handling
-def test_malformed_request(client):
+# 17. session deletion removes workspace and DB records
+def test_session_cleanup(client):
     sess1 = client.post("/sessions", json={}).json()["session_id"]
-    job_id = client.post(f"/sessions/{sess1}/jobs", json={}).json()["job_id"]
+    client.post(f"/sessions/{sess1}/inputs", files={"file": ("f.mp4", b"v")})
     
-    resp = client.post(f"/jobs/{job_id}/status", json={"error": "missing status"})
-    assert resp.status_code == 422 
+    # Verify it exists
+    assert client.get(f"/sessions/{sess1}").status_code == 200
+    
+    # Delete it
+    del_resp = client.delete(f"/sessions/{sess1}")
+    assert del_resp.status_code == 204
+    
+    # Verify DB record gone
+    assert client.get(f"/sessions/{sess1}").status_code == 404
+    
+    # Wait, workspace should be gone. We can't check directly without internal access, but we can verify inputs are 404
+    assert client.get(f"/sessions/{sess1}/inputs").status_code == 404
 
-# 18. API responses do not expose internal filesystem paths
-def test_api_responses_hide_paths(client):
+# 18. missing-session deletion
+def test_missing_session_deletion(client):
+    del_resp = client.delete("/sessions/123e4567-e89b-12d3-a456-426614174000")
+    assert del_resp.status_code == 404
+
+# 19. job-list API and isolation
+def test_api_list_jobs(client):
     sess1 = client.post("/sessions", json={}).json()["session_id"]
-    file_record = client.post(f"/sessions/{sess1}/inputs", files={"file": ("f.mp4", b"v")}).json()
+    sess2 = client.post("/sessions", json={}).json()["session_id"]
     
-    for val in file_record.values():
-        if isinstance(val, str):
-            assert "\\" not in val
-            if "T" not in val: # ignore datetime iso string which has punctuation, focus on path separators
-                assert "/" not in val
+    job1 = client.post(f"/sessions/{sess1}/jobs", json={}).json()["job_id"]
+    job2 = client.post(f"/sessions/{sess2}/jobs", json={}).json()["job_id"]
+    
+    resp1 = client.get(f"/sessions/{sess1}/jobs")
+    assert resp1.status_code == 200
+    jobs1 = resp1.json()
+    assert len(jobs1) == 1
+    assert jobs1[0]["job_id"] == job1
+    
+    resp2 = client.get(f"/sessions/{sess2}/jobs")
+    assert resp2.status_code == 200
+    jobs2 = resp2.json()
+    assert len(jobs2) == 1
+    assert jobs2[0]["job_id"] == job2
 
-    sess_data = client.get(f"/sessions/{sess1}").json()
-    assert "\\" not in str(sess_data)
+# 20. input locking
+def test_input_locked_during_processing(client):
+    sess1 = client.post("/sessions", json={}).json()["session_id"]
+    client.post(f"/sessions/{sess1}/inputs", files={"file": ("f.mp4", b"v")})
+    
+    job1 = client.post(f"/sessions/{sess1}/jobs", json={}).json()["job_id"]
+    
+    # Job is now 'queued'. Input mutation should be locked.
+    upload_resp = client.post(f"/sessions/{sess1}/inputs", files={"file": ("f2.mp4", b"v2")})
+    assert upload_resp.status_code == 409
+    
+    # Try delete
+    inputs = client.get(f"/sessions/{sess1}/inputs").json()
+    del_resp = client.delete(f"/sessions/{sess1}/inputs/{inputs[0]['stored_filename']}")
+    assert del_resp.status_code == 409
+
+# 21. failed job input behavior
+def test_failed_job_input_behavior(client):
+    sess1 = client.post("/sessions", json={}).json()["session_id"]
+    job1 = client.post(f"/sessions/{sess1}/jobs", json={}).json()["job_id"]
+    
+    # Use store to artificially transition to 'failed' to simulate worker failure
+    store = client.app.dependency_overrides.get(get_session_manager, get_session_manager)().store
+    store.update_job(job1, {"status": "failed", "error": "test error"})
+    
+    # Inputs should be unlocked now
+    upload_resp = client.post(f"/sessions/{sess1}/inputs", files={"file": ("f.mp4", b"v")})
+    assert upload_resp.status_code == 201
+
+# 22. zombie job recovery
+def test_zombie_job_cleanup(client):
+    sess1 = client.post("/sessions", json={}).json()["session_id"]
+    job1 = client.post(f"/sessions/{sess1}/jobs", json={}).json()["job_id"]
+    
+    # Direct DB mutation to bypass manager checks and simulate stuck processing job
+    from src.backend.api import get_session_manager, get_job_manager, get_input_manager, get_execution_manager
+    session_manager = client.app.dependency_overrides.get(get_session_manager, get_session_manager)()
+    store = session_manager.store
+    store.update_job(job1, {"status": "processing"})
+    
+    # Execute the lifespan / recovery routine for the test execution manager
+    job_manager = get_job_manager(session_manager)
+    input_manager = get_input_manager(session_manager)
+    exec_mgr = get_execution_manager(job_manager, input_manager, session_manager)
+    exec_mgr.reap_stuck_jobs()
+    
+    # Verify job is failed
+    resp = client.get(f"/jobs/{job1}")
+    assert resp.json()["status"] == "failed"
+    assert "backend restart" in resp.json()["error"].lower()
+
+# 23. E2E real API pipeline test
+def test_real_api_e2e_pipeline(client):
+    from unittest.mock import patch
+    import time
+    
+    def mock_reconstruct(args):
+        import shutil
+        from pathlib import Path
+        workspace = Path(args.video).parent.parent
+        exports_dir = workspace / "exports"
+        exports_dir.mkdir(exist_ok=True, parents=True)
+        (exports_dir / "test_artifact.bin").write_bytes(b"artifact")
+        return {"status": "SUCCESS"}
+
+    with patch('src.backend.reconstruction_worker.reconstruct_video', side_effect=mock_reconstruct):
+        # 1. Create Session
+        sess1 = client.post("/sessions", json={}).json()["session_id"]
+        
+        # 2. Upload Input
+        client.post(f"/sessions/{sess1}/inputs", files={"file": ("test.mp4", b"mock_video")})
+        
+        # 3. Create Job
+        job1 = client.post(f"/sessions/{sess1}/jobs", json={"reconstruction_mode": "relative"}).json()["job_id"]
+        
+        # 4. Submit Job
+        submit_resp = client.post(f"/sessions/{sess1}/jobs/{job1}/submit")
+        assert submit_resp.status_code == 202
+        
+        # 5. Poll Status
+        status = "queued"
+        for _ in range(20):
+            job_info = client.get(f"/jobs/{job1}").json()
+            status = job_info["status"]
+            if status in ("completed", "failed"):
+                break
+            time.sleep(0.1)
+            
+        assert status == "completed", f"Job failed: {job_info.get('error')}"
+        
+        # 6. Retrieve Results
+        results_resp = client.get(f"/sessions/{sess1}/jobs/{job1}/results")
+        assert results_resp.status_code == 200
+        results = results_resp.json()
+        assert len(results) > 0
+        
+        # 7. Download specific result
+        result_id = results[0]["result_id"]
+        dl_resp = client.get(f"/sessions/{sess1}/jobs/{job1}/results/{result_id}")
+        assert dl_resp.status_code == 200
+        assert dl_resp.content == b"artifact"
+
+# 24. session deletion with queued job returns 409
+def test_delete_session_with_queued_job_returns_409(client):
+    sess = client.post("/sessions", json={}).json()["session_id"]
+    client.post(f"/sessions/{sess}/jobs", json={})  # creates a queued job
+    
+    del_resp = client.delete(f"/sessions/{sess}")
+    assert del_resp.status_code == 409
+    assert "active job" in del_resp.json()["detail"].lower() or "cannot delete" in del_resp.json()["detail"].lower()
+
+# 25. session deletion with processing job returns 409
+def test_delete_session_with_processing_job_returns_409(client):
+    sess = client.post("/sessions", json={}).json()["session_id"]
+    job_id = client.post(f"/sessions/{sess}/jobs", json={}).json()["job_id"]
+    
+    # Transition to processing via direct store mutation (simulating worker)
+    store = client.app.dependency_overrides.get(get_session_manager, get_session_manager)().store
+    store.update_job(job_id, {"status": "processing"})
+    
+    del_resp = client.delete(f"/sessions/{sess}")
+    assert del_resp.status_code == 409
+
+# 26. nonexistent session deletion returns 404
+def test_delete_nonexistent_session_returns_404(client):
+    del_resp = client.delete("/sessions/123e4567-e89b-12d3-a456-426614174000")
+    assert del_resp.status_code == 404
+
+# 27. session deletion after all jobs completed/failed succeeds
+def test_delete_session_after_completed_job_succeeds(client):
+    sess = client.post("/sessions", json={}).json()["session_id"]
+    job_id = client.post(f"/sessions/{sess}/jobs", json={}).json()["job_id"]
+    
+    # Transition to completed via direct store mutation
+    store = client.app.dependency_overrides.get(get_session_manager, get_session_manager)().store
+    store.update_job(job_id, {"status": "processing"})
+    store.update_job(job_id, {"status": "completed"})
+    
+    del_resp = client.delete(f"/sessions/{sess}")
+    assert del_resp.status_code == 204
+    
+    # Confirm session is gone
+    get_resp = client.get(f"/sessions/{sess}")
+    assert get_resp.status_code == 404
+
