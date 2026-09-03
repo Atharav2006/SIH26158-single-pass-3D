@@ -106,3 +106,6 @@ colmap.log
 *.swp
 
 data/backend_workspaces/
+
+# Backend SQLite DB
+data/backend_metadata/

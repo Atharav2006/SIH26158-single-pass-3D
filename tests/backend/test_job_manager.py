@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from src.backend.session_manager import BackendSessionManager
 from src.backend.job_manager import BackendJobManager, JobManagerError
+from src.backend.metadata_store import MetadataStore
 
 @pytest.fixture
 def temp_workspace():
@@ -12,8 +13,14 @@ def temp_workspace():
         yield d
 
 @pytest.fixture
-def session_manager(temp_workspace):
-    return BackendSessionManager(base_workspace_dir=temp_workspace)
+def store(temp_workspace):
+    store = MetadataStore(db_path=Path(temp_workspace) / "test.sqlite3")
+    store.initialize()
+    return store
+
+@pytest.fixture
+def session_manager(temp_workspace, store):
+    return BackendSessionManager(base_workspace_dir=temp_workspace, metadata_store=store)
 
 @pytest.fixture
 def job_manager(session_manager):
@@ -36,13 +43,13 @@ def test_unique_job_ids(session_manager, job_manager):
     job_id2 = job_manager.create_job(session_id)
     assert job_id1 != job_id2
 
-def test_persisted_job_metadata(session_manager, job_manager):
+def test_persisted_job_metadata(session_manager, job_manager, store):
     session_id = session_manager.create_session()
     job_id = job_manager.create_job(session_id, reconstruction_mode="METRIC")
     
-    workspace = session_manager.get_session_workspace(session_id)
-    job_file = workspace / "metadata" / "jobs" / f"{job_id}.json"
-    assert job_file.exists()
+    # Verify job is persisted in the sqlite db
+    db_job = store.get_job(job_id)
+    assert db_job["reconstruction_mode"] == "METRIC"
 
 def test_get_job_reads_persisted_data(session_manager, job_manager):
     session_id = session_manager.create_session()
@@ -115,19 +122,19 @@ def test_traversal_attempt_rejected(job_manager):
     with pytest.raises(JobManagerError):
         job_manager.get_job("../../../etc/passwd")
 
-def test_session_job_isolation(session_manager, job_manager):
+def test_session_job_isolation(session_manager, job_manager, store):
     session_a = session_manager.create_session()
     session_b = session_manager.create_session()
     
     job_a = job_manager.create_job(session_a)
     job_b = job_manager.create_job(session_b)
     
-    # Prove job_a is only in session_a workspace
-    workspace_a = session_manager.get_session_workspace(session_a)
-    workspace_b = session_manager.get_session_workspace(session_b)
+    # Prove job_a is only associated with session_a in the db
+    jobs_a = store.list_jobs(session_a)
+    jobs_b = store.list_jobs(session_b)
     
-    assert (workspace_a / "metadata" / "jobs" / f"{job_a}.json").exists()
-    assert not (workspace_b / "metadata" / "jobs" / f"{job_a}.json").exists()
+    assert job_a in [j["job_id"] for j in jobs_a]
+    assert job_a not in [j["job_id"] for j in jobs_b]
     
 def test_session_metadata_reflects_lifecycle(session_manager, job_manager):
     session_id = session_manager.create_session()
@@ -135,7 +142,7 @@ def test_session_metadata_reflects_lifecycle(session_manager, job_manager):
     
     session = session_manager.get_session(session_id)
     assert session["status"] == "queued"
-    assert session["active_job_id"] == job_id
+    assert session["output_metadata"]["active_job_id"] == job_id
     
     job_manager.update_job_status(job_id, "processing")
     session = session_manager.get_session(session_id)

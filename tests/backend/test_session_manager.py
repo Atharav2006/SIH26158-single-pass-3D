@@ -4,6 +4,7 @@ import uuid
 import tempfile
 from pathlib import Path
 from src.backend.session_manager import BackendSessionManager, SessionManagerError
+from src.backend.metadata_store import MetadataStore
 
 @pytest.fixture
 def temp_workspace():
@@ -11,8 +12,14 @@ def temp_workspace():
         yield d
 
 @pytest.fixture
-def manager(temp_workspace):
-    return BackendSessionManager(base_workspace_dir=temp_workspace)
+def store(temp_workspace):
+    store = MetadataStore(db_path=Path(temp_workspace) / "test.sqlite3")
+    store.initialize()
+    return store
+
+@pytest.fixture
+def manager(temp_workspace, store):
+    return BackendSessionManager(base_workspace_dir=temp_workspace, metadata_store=store)
 
 def test_create_session(manager):
     session_id = manager.create_session({"test_key": "test_value"})
@@ -23,12 +30,11 @@ def test_create_session(manager):
     workspace = manager.get_session_workspace(session_id)
     assert workspace.exists()
     
-    for d in ["inputs", "temp", "outputs", "metadata", "logs"]:
+    for d in ["inputs", "temp", "outputs", "logs"]:
         assert (workspace / d).exists()
         assert (workspace / d).is_dir()
         
-    meta_file = workspace / "metadata" / "session_info.json"
-    assert meta_file.exists()
+
 
 def test_session_exists(manager):
     session_id = manager.create_session()

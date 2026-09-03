@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from contextlib import asynccontextmanager
 
+from src.backend.metadata_store import MetadataStore
 from src.backend.session_manager import BackendSessionManager, SessionManagerError
 from src.backend.input_manager import BackendInputManager, InputManagerError
 from src.backend.job_manager import BackendJobManager, JobManagerError
@@ -19,7 +20,11 @@ from src.backend.execution_manager import BackgroundExecutionManager
 
 # --- Global State ---
 # In a full app, these would ideally be bound to app.state
-_session_manager = BackendSessionManager()
+_metadata_store = MetadataStore()
+# Initialize the database schema on startup
+_metadata_store.initialize()
+
+_session_manager = BackendSessionManager(metadata_store=_metadata_store)
 _input_manager = BackendInputManager(_session_manager)
 _job_manager = BackendJobManager(_session_manager)
 _worker = BackendReconstructionWorker(_session_manager, _input_manager, _job_manager)

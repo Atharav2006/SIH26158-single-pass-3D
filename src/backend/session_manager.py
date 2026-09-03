@@ -1,9 +1,10 @@
-import json
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any
+
+from src.backend.metadata_store import MetadataStore, MetadataStoreError
 
 class SessionManagerError(Exception):
     pass
@@ -11,9 +12,10 @@ class SessionManagerError(Exception):
 class BackendSessionManager:
     """Manages secure, isolated backend reconstruction sessions."""
     
-    REQUIRED_DIRS = ["inputs", "temp", "outputs", "metadata", "logs"]
+    REQUIRED_DIRS = ["inputs", "temp", "outputs", "logs"]
 
-    def __init__(self, base_workspace_dir: str = "data/backend_workspaces/"):
+    def __init__(self, metadata_store: MetadataStore, base_workspace_dir: str = "data/backend_workspaces/"):
+        self.store = metadata_store
         self.base_dir = Path(base_workspace_dir).resolve()
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -45,16 +47,18 @@ class BackendSessionManager:
         return session_dir
 
     def session_exists(self, session_id: str) -> bool:
-        """Checks if a session workspace and its metadata file exist."""
+        """Checks if a session exists in the database and workspace."""
         try:
+            # If get_session succeeds, it exists in DB
+            self.store.get_session(session_id)
+            # We also check the workspace
             workspace = self.get_session_workspace(session_id)
-            meta_file = workspace / "metadata" / "session_info.json"
-            return workspace.is_dir() and meta_file.is_file()
-        except SessionManagerError:
+            return workspace.is_dir()
+        except (MetadataStoreError, SessionManagerError):
             return False
 
     def create_session(self, metadata: Dict[str, Any] = None) -> str:
-        """Creates a new session, its directory structure, and initializes metadata."""
+        """Creates a new session, its directory structure, and initializes metadata in DB."""
         session_id = str(uuid.uuid4())
         workspace = self.get_session_workspace(session_id)
         
@@ -79,42 +83,29 @@ class BackendSessionManager:
             "error": None
         }
         
-        self._write_metadata(session_id, session_data)
+        try:
+            self.store.create_session(session_data)
+        except MetadataStoreError as e:
+            raise SessionManagerError(str(e))
+            
         return session_id
 
     def get_session(self, session_id: str) -> Dict[str, Any]:
         """Loads and returns the persisted metadata for a session."""
-        if not self.session_exists(session_id):
-            raise SessionManagerError(f"Session {session_id} does not exist.")
-            
-        workspace = self.get_session_workspace(session_id)
-        meta_file = workspace / "metadata" / "session_info.json"
-        
-        with open(meta_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        try:
+            return self.store.get_session(session_id)
+        except MetadataStoreError as e:
+            raise SessionManagerError(str(e))
 
     def update_metadata(self, session_id: str, new_metadata: Dict[str, Any]) -> None:
         """Updates the session metadata and bumps the updated_at timestamp."""
-        current_data = self.get_session(session_id)
+        # Ensure session exists first
+        self.get_session(session_id)
         
-        # Prevent overriding fixed core fields accidentally unless done carefully
-        current_data.update(new_metadata)
+        updates = new_metadata.copy()
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         
-        # Enforce stable ID and created_at (just in case they were in new_metadata)
-        current_data["session_id"] = session_id
-        # We assume created_at remains stable; we just overwrite updated_at
-        current_data["updated_at"] = datetime.now(timezone.utc).isoformat()
-        
-        self._write_metadata(session_id, current_data)
-
-    def _write_metadata(self, session_id: str, data: Dict[str, Any]) -> None:
-        """Safely writes metadata via atomic replacement."""
-        workspace = self.get_session_workspace(session_id)
-        meta_file = workspace / "metadata" / "session_info.json"
-        temp_file = workspace / "metadata" / "session_info.json.tmp"
-        
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-            
-        # Atomic replace
-        temp_file.replace(meta_file)
+        try:
+            self.store.update_session(session_id, updates)
+        except MetadataStoreError as e:
+            raise SessionManagerError(str(e))

@@ -1,6 +1,9 @@
 import pytest
 import time
+import uuid
+import tempfile
 import threading
+from pathlib import Path
 from typing import Dict, Any
 from unittest.mock import MagicMock, patch
 
@@ -9,10 +12,22 @@ from src.backend.input_manager import BackendInputManager
 from src.backend.job_manager import BackendJobManager
 from src.backend.reconstruction_worker import BackendReconstructionWorker
 from src.backend.execution_manager import BackgroundExecutionManager
+from src.backend.metadata_store import MetadataStore
 
 @pytest.fixture
-def managers():
-    sm = BackendSessionManager()
+def temp_workspace():
+    with tempfile.TemporaryDirectory() as d:
+        yield d
+
+@pytest.fixture
+def store(temp_workspace):
+    store = MetadataStore(db_path=Path(temp_workspace) / "test.sqlite3")
+    store.initialize()
+    return store
+
+@pytest.fixture
+def managers(temp_workspace, store):
+    sm = BackendSessionManager(base_workspace_dir=temp_workspace, metadata_store=store)
     im = BackendInputManager(sm)
     jm = BackendJobManager(sm)
     worker = BackendReconstructionWorker(sm, im, jm)

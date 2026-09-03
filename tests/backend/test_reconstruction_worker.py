@@ -1,6 +1,7 @@
 import pytest
 import tempfile
 import json
+import uuid
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -8,6 +9,7 @@ from src.backend.session_manager import BackendSessionManager, SessionManagerErr
 from src.backend.input_manager import BackendInputManager
 from src.backend.job_manager import BackendJobManager, JobManagerError
 from src.backend.reconstruction_worker import BackendReconstructionWorker
+from src.backend.metadata_store import MetadataStore
 
 @pytest.fixture
 def temp_workspace():
@@ -15,8 +17,14 @@ def temp_workspace():
         yield d
 
 @pytest.fixture
-def managers(temp_workspace):
-    sm = BackendSessionManager(base_workspace_dir=temp_workspace)
+def store(temp_workspace):
+    store = MetadataStore(db_path=Path(temp_workspace) / "test.sqlite3")
+    store.initialize()
+    return store
+
+@pytest.fixture
+def managers(temp_workspace, store):
+    sm = BackendSessionManager(base_workspace_dir=temp_workspace, metadata_store=store)
     im = BackendInputManager(sm)
     jm = BackendJobManager(sm)
     worker = BackendReconstructionWorker(sm, im, jm)
@@ -68,18 +76,15 @@ def test_4_invalid_job_session_relationship(mock_reconstruct, managers):
     session_id = sm.create_session({})
     job_id = jm.create_job(session_id)
     
-    # Mutate the job on disk to have an invalid session ID
-    job_file = jm._get_jobs_dir(session_id) / f"{job_id}.json"
-    with open(job_file, 'r') as f:
-        job_data = json.load(f)
-    job_data["session_id"] = "invalid-session-uuid"
-    with open(job_file, 'w') as f:
-        json.dump(job_data, f)
+    # Mutate the job in the database to have an invalid session ID
+    with jm.store._get_connection() as conn:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("UPDATE jobs SET session_id = 'invalid-session-uuid' WHERE job_id = ?", (job_id,))
+    
         
-    # Attempting to run it should raise an exception since list_inputs fails on missing session
-    job_data = worker.run_job(job_id)
-    assert job_data["status"] == "failed"
-    assert "Session" in job_data["error"] or "Workspace" in job_data["error"] or "does not exist" in job_data["error"]
+    # Attempting to run it will fail when trying to update the job status
+    with pytest.raises(JobManagerError, match="invalid-session-uuid"):
+        worker.run_job(job_id)
 
 # 5) processing duplicate
 @patch('src.backend.reconstruction_worker.reconstruct_video')

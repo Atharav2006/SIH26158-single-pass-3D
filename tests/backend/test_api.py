@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from src.backend.api import app, get_session_manager, get_input_manager
 from src.backend.session_manager import BackendSessionManager
 from src.backend.input_manager import BackendInputManager
+from src.backend.metadata_store import MetadataStore
 
 @pytest.fixture
 def temp_workspace():
@@ -14,10 +15,16 @@ def temp_workspace():
         yield d
 
 @pytest.fixture
-def client(temp_workspace):
+def store(temp_workspace):
+    store = MetadataStore(db_path=Path(temp_workspace) / "test.sqlite3")
+    store.initialize()
+    return store
+
+@pytest.fixture
+def client(temp_workspace, store):
     # Override the default dependency to use the temporary workspace
     def override_get_session_manager():
-        return BackendSessionManager(base_workspace_dir=temp_workspace)
+        return BackendSessionManager(base_workspace_dir=temp_workspace, metadata_store=store)
         
     app.dependency_overrides[get_session_manager] = override_get_session_manager
     with TestClient(app) as c:
@@ -51,37 +58,59 @@ def test_upload_valid_input_and_cleanup(client):
     files = {"file": ("test_vid.mp4", b"dummy video content", "video/mp4")}
     data = {"input_type": "video"}
     
-    # Check temp dir before
-    temp_dir = Path(tempfile.gettempdir())
-    initial_temp_files = set(temp_dir.iterdir())
-    
-    resp2 = client.post(f"/sessions/{session_id}/inputs", files=files, data=data)
+    import tempfile
+    import os
+    from unittest.mock import patch
+
+    real_mkstemp = tempfile.mkstemp
+    created_paths = []
+    def mkstemp_side_effect(*args, **kwargs):
+        fd, path = real_mkstemp(*args, **kwargs)
+        created_paths.append(path)
+        return fd, path
+
+    with patch('src.backend.api.tempfile.mkstemp', side_effect=mkstemp_side_effect):
+        resp2 = client.post(f"/sessions/{session_id}/inputs", files=files, data=data)
+        
     assert resp2.status_code == 201
     record = resp2.json()
     assert record["original_filename"] == "test_vid.mp4"
     assert record["extension"] == ".mp4"
     assert record["input_type"] == "video"
-    
+
     # Verify temporary staging file is removed
-    current_temp_files = set(temp_dir.iterdir())
-    assert len(current_temp_files - initial_temp_files) == 0
+    assert len(created_paths) > 0, "Expected at least one temp file to be created during upload"
+    for path in created_paths:
+        assert not os.path.exists(path), f"Temporary file was not cleaned up: {path}"
 
 # 4. reject invalid extension and verify cleanup
 def test_reject_invalid_extension_and_cleanup(client):
     resp1 = client.post("/sessions", json={})
     session_id = resp1.json()["session_id"]
     
-    temp_dir = Path(tempfile.gettempdir())
-    initial_temp_files = set(temp_dir.iterdir())
-    
     files = {"file": ("script.py", b"print('hello')", "text/x-python")}
-    resp2 = client.post(f"/sessions/{session_id}/inputs", files=files)
+    
+    import tempfile
+    import os
+    from unittest.mock import patch
+
+    real_mkstemp = tempfile.mkstemp
+    created_paths = []
+    def mkstemp_side_effect(*args, **kwargs):
+        fd, path = real_mkstemp(*args, **kwargs)
+        created_paths.append(path)
+        return fd, path
+
+    with patch('src.backend.api.tempfile.mkstemp', side_effect=mkstemp_side_effect):
+        resp2 = client.post(f"/sessions/{session_id}/inputs", files=files)
+        
     assert resp2.status_code == 400
     assert "Unsupported file extension" in resp2.json()["detail"]
     
     # Verify temp file cleaned up on InputManager failure
-    current_temp_files = set(temp_dir.iterdir())
-    assert len(current_temp_files - initial_temp_files) == 0
+    assert len(created_paths) > 0, "Expected at least one temp file to be created during upload"
+    for path in created_paths:
+        assert not os.path.exists(path), f"Temporary file was not cleaned up: {path}"
 
 # 5. reject missing session
 def test_reject_missing_session(client):
@@ -212,7 +241,8 @@ def test_oversized_upload(client):
     sess1 = client.post("/sessions", json={}).json()["session_id"]
     
     def override_get_input_manager():
-        sm = BackendSessionManager(base_workspace_dir=client.app.dependency_overrides.get(get_session_manager, get_session_manager)().base_dir)
+        # Get the same session manager being used by the rest of the test
+        sm = client.app.dependency_overrides.get(get_session_manager, get_session_manager)()
         return BackendInputManager(sm, max_file_size_bytes=5)
         
     client.app.dependency_overrides[get_input_manager] = override_get_input_manager

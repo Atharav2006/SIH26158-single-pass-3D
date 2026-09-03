@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from src.backend.session_manager import BackendSessionManager
 from src.backend.input_manager import BackendInputManager, InputManagerError
+from src.backend.metadata_store import MetadataStore
 
 @pytest.fixture
 def temp_workspace():
@@ -11,8 +12,14 @@ def temp_workspace():
         yield d
 
 @pytest.fixture
-def session_manager(temp_workspace):
-    return BackendSessionManager(base_workspace_dir=temp_workspace)
+def store(temp_workspace):
+    store = MetadataStore(db_path=Path(temp_workspace) / "test.sqlite3")
+    store.initialize()
+    return store
+
+@pytest.fixture
+def session_manager(temp_workspace, store):
+    return BackendSessionManager(base_workspace_dir=temp_workspace, metadata_store=store)
 
 @pytest.fixture
 def input_manager(session_manager):
